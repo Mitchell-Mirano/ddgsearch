@@ -1,14 +1,9 @@
-import re
-from charset_normalizer.cli import query_yes_no
 import asyncio
-import aiohttp
-import trafilatura
-import logging
 import os
 from ddgsearch import llm_search
 
 if __name__ == "__main__":
-    query = "Julia"
+    query = "Python"
 
     results = asyncio.run(llm_search(query,limit=15))
 
