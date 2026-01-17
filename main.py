@@ -1,18 +1,16 @@
 import asyncio
 import os
-from ddgsearch import llm_text_search
+from ddgsearch import llm_web_search
 
 if __name__ == "__main__":
-
-    outout_format = "markdown"
     query = "Python"
 
-    results = asyncio.run(llm_text_search(query,
+    results = asyncio.run(llm_web_search(query,
                                                                                     limit_urls=15,
                                                                                     limit_pages=2,
-                                                                                    output_format=outout_format,
-                                                                                    min_length=200,
-                                                                                    max_length=7500
+                                                                                    output_format="markdown",
+                                                                                    min_page_text_lenght=500,
+                                                                                    max_page_text_lenght=7500
                                                                                     ))
 
     if results:
@@ -20,10 +18,10 @@ if __name__ == "__main__":
 
         for result in results:
             
-            score = result["entropy"]
+            score = result["score"]
             title = result["title"]
 
-            with open(f"results/[{score:.2f}]{title}.md", "w", encoding="utf-8") as f:
+            with open(f"results/[{score:.2f}]-{title}.md", "w", encoding="utf-8") as f:
                 f.write(f"# {result['title']}\n\n")
                 f.write(f"## URL: {result['url']}\n\n")
                 f.write(f"## Score: {score:.2f}\n\n")
