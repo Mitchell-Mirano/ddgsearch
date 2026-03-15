@@ -1,0 +1,36 @@
+{
+    "query": "Advantages of Python for AI and Data Science",
+    "results_stats": {
+        "web_pages": 1,
+        "pdfs": 0,
+        "images": 2,
+        "videos": 2
+    },
+    "pdfs": [],
+    "images": [
+        {
+            "title": "7 Benefits of using Python for Data Science | Edoxi",
+            "url": "https://api.edoxi.com/assets/studyhub/7_Benefits_Of_Using_Python_For_Data_Science.webp",
+            "relevance_score": 0.625
+        },
+        {
+            "title": "Python for Data Science: A Comprehensive Guide [Updated]",
+            "url": "https://www.guvi.in/blog/wp-content/uploads/2024/08/2.png",
+            "relevance_score": 0.5
+        }
+    ],
+    "videos": [
+        {
+            "title": "Python For Data Science Full Course - 9 Hours | Data Science With Python | Python Training | Edureka",
+            "url": "https://www.youtube.com/watch?v=-6RqxhNO2yY",
+            "duration": "9:22:55",
+            "relevance_score": 0.5
+        },
+        {
+            "title": "Learn Python for Data Science - Full Course for Beginners",
+            "url": "https://www.youtube.com/watch?v=CMEWVn1uZpQ",
+            "duration": "",
+            "relevance_score": 0.5
+        }
+    ]
+}
