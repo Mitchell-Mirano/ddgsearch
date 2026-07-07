@@ -26,7 +26,15 @@ async def main():
         with open(filename, "w", encoding="utf-8") as f:
             f.write(f"# {page['title']}\n\n")
             f.write(f"URL: {page['url']}\n")
-            f.write(f"Relevance Score: {page['score']:.2f}\n\n")
+            f.write(f"Relevance Score: {page['score']:.2f}\n")
+            
+            meta = page.get("metadata", {})
+            if meta:
+                f.write(f"Author: {meta.get('author', 'N/A')}\n")
+                f.write(f"Publish Date: {meta.get('date', 'N/A')}\n")
+                f.write(f"Description: {meta.get('description', 'N/A')}\n")
+                
+            f.write("\n")
             f.write(page['content'])
 
     # 2. Save summary of other resources (PDFs, Images, Videos)

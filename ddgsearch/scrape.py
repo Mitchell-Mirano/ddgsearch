@@ -3,11 +3,11 @@ import aiohttp
 import trafilatura
 import logging
 import re
-from typing import List, Dict, Optional
+from typing import List, Dict, Optional, Union
 
 logger = logging.getLogger(__name__)
 
-async def get_html(session: aiohttp.ClientSession, url: str) -> Optional[tuple[str, str]]:
+async def get_html(session: aiohttp.ClientSession, url: str) -> Optional[tuple[Union[str, bytes], str]]:
     """Downloads HTML content or detects if it's a PDF.
 
     Args:
@@ -15,8 +15,8 @@ async def get_html(session: aiohttp.ClientSession, url: str) -> Optional[tuple[s
         url (str): The URL to download or verify.
 
     Returns:
-        Optional[tuple[str, str]]: A tuple (content, content_type). 
-        If it's a PDF, content will be "IS_PDF".
+        Optional[tuple[Union[str, bytes], str]]: A tuple (content, content_type). 
+        If it's a PDF, content will be raw bytes.
     """
     try:
         async with session.get(url, timeout=12) as response:
@@ -26,8 +26,8 @@ async def get_html(session: aiohttp.ClientSession, url: str) -> Optional[tuple[s
             content_type = response.headers.get('Content-Type', '').lower()
             
             # Detect PDF
-            if 'application/pdf' in content_type:
-                return "IS_PDF", content_type
+            if 'application/pdf' in content_type or url.lower().endswith('.pdf'):
+                return await response.read(), 'application/pdf'
                 
             # Only allow HTML/XHTML for text scraping
             if 'text/html' not in content_type and 'application/xhtml+xml' not in content_type:
@@ -107,6 +107,47 @@ def extract_content(url: str, html: str, output_format: str = "markdown") -> Opt
         logger.error(f"Error parsing {url}: {e}")
         return None
 
+import io
+import pypdf
+
+def extract_pdf_content_with_meta(pdf_bytes: bytes) -> tuple[Optional[str], dict]:
+    """Extracts text content and metadata from PDF bytes using pypdf.
+
+    Args:
+        pdf_bytes (bytes): The raw PDF file bytes.
+
+    Returns:
+        tuple[Optional[str], dict]: (Extracted text content, metadata dict).
+    """
+    try:
+        reader = pypdf.PdfReader(io.BytesIO(pdf_bytes))
+        text_parts = []
+        for page in reader.pages:
+            text = page.extract_text()
+            if text:
+                text_parts.append(text)
+                
+        meta = {}
+        try:
+            pm = reader.metadata
+            if pm:
+                meta = {
+                    "title": pm.get("/Title") or pm.title,
+                    "author": pm.get("/Author") or pm.author,
+                    "description": pm.get("/Subject") or pm.subject,
+                    "date": pm.get("/CreationDate") or (pm.creation_date.isoformat() if pm.creation_date else None),
+                    "sitename": "PDF Document"
+                }
+                # Filter out None/empty values
+                meta = {k: str(v) for k, v in meta.items() if v}
+        except Exception:
+            pass
+            
+        return "\n\n".join(text_parts) if text_parts else "", meta
+    except Exception as e:
+        logger.error(f"Error parsing PDF bytes: {e}")
+        return None, {}
+
 async def scrape_web_pages(pages: List[Dict], output_format: str = "markdown") -> List[Dict]:
     """Processes a list of pages and extracts their content safely.
 
@@ -115,10 +156,11 @@ async def scrape_web_pages(pages: List[Dict], output_format: str = "markdown") -
         output_format (str): The extracted text format.
 
     Returns:
-        List[Dict]: The list of pages with extracted content.
+        List[Dict]: The list of pages with extracted content and metadata.
     """
+    from ddgsearch.utils import get_random_user_agent
     headers = {
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+        "User-Agent": get_random_user_agent()
     }
     
     async with aiohttp.ClientSession(headers=headers) as session:
@@ -128,15 +170,36 @@ async def scrape_web_pages(pages: List[Dict], output_format: str = "markdown") -
         
         # 2. Sequential extraction (CPU-bound)
         for page, result in zip(pages, results):
+            page['metadata'] = {}
             if result:
-                content_data, _ = result
+                content_data, content_type = result
                 
-                # If it's a PDF, assign the marker directly without extracting text
-                if content_data == "IS_PDF":
-                    page['content'] = "IS_PDF"
+                # If it's a PDF, extract its text content and metadata
+                if 'application/pdf' in content_type:
+                    text, meta = extract_pdf_content_with_meta(content_data)
+                    page['content'] = text
+                    page['metadata'] = meta
+                    page['is_pdf'] = True
                 else:
                     # Execute HTML content extraction
                     page['content'] = extract_content(page['url'], content_data, output_format)
+                    
+                    # Extract HTML metadata
+                    from trafilatura.metadata import extract_metadata
+                    try:
+                        meta = extract_metadata(content_data)
+                        if meta:
+                            page['metadata'] = {
+                                "title": meta.title,
+                                "author": meta.author,
+                                "date": meta.date,
+                                "description": meta.description,
+                                "sitename": meta.sitename
+                            }
+                            # Clean out None values
+                            page['metadata'] = {k: v for k, v in page['metadata'].items() if v}
+                    except Exception:
+                        pass
             else:
                 page['content'] = None
             

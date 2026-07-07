@@ -1,6 +1,36 @@
 import math
 import re
 
+def split_into_paragraphs(text: str, min_length: int = 100) -> list[str]:
+    """Splits a document text into cohesive paragraphs.
+
+    Filters out paragraphs shorter than min_length to remove boilerplate.
+
+    Args:
+        text (str): The document text.
+        min_length (int): Minimum paragraph length in characters.
+
+    Returns:
+        list[str]: Cleaned list of paragraphs.
+    """
+    if not text:
+        return []
+    
+    # Split on double newlines (typical paragraph separator in raw text / markdown)
+    raw_paras = text.split("\n\n")
+    paragraphs = []
+    
+    for p in raw_paras:
+        cleaned = p.strip()
+        if not cleaned:
+            continue
+        
+        # If it's too short, it could be header/footer/menu, skip it
+        if len(cleaned) >= min_length:
+            paragraphs.append(cleaned)
+            
+    return paragraphs
+
 def calculate_relevance_score(text: str, query: str) -> float:
     """Calculates text relevance with respect to the query.
 

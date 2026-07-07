@@ -20,8 +20,9 @@ class DDGSearchEngine:
 
     def __init__(self):
         """Initializes the search engine with standard headers."""
+        from ddgsearch.utils import get_random_user_agent
         self.headers = {
-            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+            "User-Agent": get_random_user_agent(),
             "Accept": "application/json, text/javascript, */*; q=0.01",
             "Referer": "https://duckduckgo.com/",
             "Sec-Fetch-Dest": "empty",
@@ -60,7 +61,7 @@ class DDGSearchEngine:
             limit (int): Maximum number of results to return.
 
         Returns:
-            List[Dict]: List of results with 'title' and 'url'.
+            List[Dict]: List of results with 'title', 'url', and 'snippet'.
         """
         url = f"https://duckduckgo.com/html/?q={quote(query)}"
         try:
@@ -69,24 +70,36 @@ class DDGSearchEngine:
                     return []
                 raw_html = await resp.text()
                 
-                # Robust regex to capture titles and URLs
-                pattern = re.compile(r'class="result__a" href=".*?uddg=([^"&]+).*?">(.*?)</a>', re.DOTALL)
-                matches = pattern.findall(raw_html)
-                
+                # Split raw HTML by the search result body container keyword
+                blocks = raw_html.split("result__body")
                 results = []
-                seen_domains = set()
-                for raw_url, title in matches:
-                    actual_url = unquote(raw_url)
-                    if "duckduckgo.com/y.js" in actual_url:
-                        continue
+                
+                for block in blocks[1:]:
+                    url_match = re.search(r'class="result__a"\s+href=".*?uddg=([^"&]+)', block)
+                    title_match = re.search(r'class="result__a"[^>]*>(.*?)</a>', block, re.DOTALL)
+                    snippet_match = re.search(r'class="result__snippet"[^>]*>(.*?)</(?:a|div)>', block, re.DOTALL)
                     
-                    domain = urlparse(actual_url).netloc
-                    if domain and domain not in seen_domains:
-                        seen_domains.add(domain)
-                        results.append({
-                            "title": html.unescape(re.sub(r'<.*?>', '', title)).strip(),
-                            "url": actual_url
-                        })
+                    if url_match and title_match:
+                        actual_url = unquote(url_match.group(1))
+                        if "duckduckgo.com/y.js" in actual_url:
+                            continue
+                            
+                        domain = urlparse(actual_url).netloc
+                        # Soft limit of max 2 pages per domain instead of hard 1 page
+                        # To support comprehensive searches on sites like wikipedia or arxiv
+                        domain_count = sum(1 for r in results if urlparse(r["url"]).netloc == domain)
+                        if domain and domain_count < 2:
+                            title_text = html.unescape(re.sub(r'<.*?>', '', title_match.group(1))).strip()
+                            snippet_text = ""
+                            if snippet_match:
+                                snippet_text = html.unescape(re.sub(r'<.*?>', '', snippet_match.group(1))).strip()
+                                
+                            results.append({
+                                "title": title_text,
+                                "url": actual_url,
+                                "snippet": snippet_text
+                            })
+                            
                     if len(results) >= limit:
                         break
                 return results

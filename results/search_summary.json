@@ -1,7 +1,7 @@
 {
     "query": "Advantages of Python for AI and Data Science",
     "results_stats": {
-        "web_pages": 1,
+        "web_pages": 2,
         "pdfs": 0,
         "images": 2,
         "videos": 2
@@ -14,23 +14,23 @@
             "relevance_score": 0.625
         },
         {
-            "title": "Python for Data Science: A Comprehensive Guide [Updated]",
-            "url": "https://www.guvi.in/blog/wp-content/uploads/2024/08/2.png",
+            "title": "Advantages and Disadvantages of Python - Why Python Stands Out",
+            "url": "https://i.pinimg.com/originals/b4/26/a5/b426a5e3867398de3ce042963feb10fe.jpg",
             "relevance_score": 0.5
         }
     ],
     "videos": [
         {
-            "title": "Python For Data Science Full Course - 9 Hours | Data Science With Python | Python Training | Edureka",
-            "url": "https://www.youtube.com/watch?v=-6RqxhNO2yY",
-            "duration": "9:22:55",
-            "relevance_score": 0.5
+            "title": "Free Class : Python and Data : Foundation of AI | Day 1 of Bootcamp",
+            "url": "https://www.youtube.com/watch?v=AKKq0cEm_IA",
+            "duration": "2:22:55",
+            "relevance_score": 0.625
         },
         {
-            "title": "Learn Python for Data Science - Full Course for Beginners",
-            "url": "https://www.youtube.com/watch?v=CMEWVn1uZpQ",
-            "duration": "",
-            "relevance_score": 0.5
+            "title": "The Only Python You Need to Learn for AI in 2026",
+            "url": "https://www.youtube.com/watch?v=otBkgSZr0no",
+            "duration": "8:34",
+            "relevance_score": 0.375
         }
     ]
 }

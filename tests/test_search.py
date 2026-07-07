@@ -27,8 +27,13 @@ async def test_only_pdfs():
     assert len(results["pages"]) == 0
     assert len(results["images"]) == 0
     assert len(results["videos"]) == 0
-    # Should find at least one PDF for this famous paper
-    # assert len(results["pdfs"]) > 0 
+    
+    # Verify that if any PDFs are found, they have actual extracted content
+    if len(results["pdfs"]) > 0:
+        pdf = results["pdfs"][0]
+        assert "content" in pdf
+        assert pdf["content"] != "IS_PDF"
+        assert len(pdf["content"]) > 50
 
 @pytest.mark.asyncio
 async def test_only_media():
@@ -56,3 +61,21 @@ async def test_all_types():
     assert len(results["pages"]) <= 1
     assert len(results["images"]) <= 1
     assert len(results["videos"]) <= 1
+
+@pytest.mark.asyncio
+async def test_metadata_and_fallback():
+    """Test that metadata is extracted and snippet fallback works."""
+    query = "Advantages of Python for AI and Data Science"
+    results = await llm_web_search(query, include_types=["pages"], limit_pages=2)
+    
+    assert "pages" in results
+    if len(results["pages"]) > 0:
+        page = results["pages"][0]
+        # Check metadata dictionary is present
+        assert "metadata" in page
+        assert isinstance(page["metadata"], dict)
+        
+        # Check snippet presence or fallback
+        assert "content" in page
+        assert page["content"] is not None
+        assert len(page["content"]) > 0

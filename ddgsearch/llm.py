@@ -2,7 +2,7 @@ import re
 from typing import List, Dict, Optional, Union
 from ddgsearch.ddg import search_urls
 from ddgsearch.scrape import scrape_web_pages
-from ddgsearch.metrics import quality_score
+from ddgsearch.metrics import quality_score, split_into_paragraphs
 
 async def llm_web_search(query: str,
                           limit_urls: int = 10,
@@ -92,57 +92,123 @@ async def llm_web_search(query: str,
         pages_to_process = raw_pages.get("pages", [])[:limit_urls]
         
         if pages_to_process:
-            # 3. Scrape and separate HTML from PDFs
+            # 3. Scrape and parse HTML and PDFs
             scraped_data = await scrape_web_pages(pages_to_process, output_format=output_format)
             
-            temp_pages = []
+            # Track all found PDFs for metadata fallback
+            all_found_pdfs = []
+            for item in scraped_data:
+                if item.get('is_pdf', False) or ".pdf" in item["url"].lower():
+                    all_found_pdfs.append({
+                        "title": item["title"],
+                        "url": item["url"],
+                        "type": "PDF",
+                        "metadata": item.get("metadata", {})
+                    })
+            
+            # 4. Paragraph Chunking and Selection
+            all_paragraphs = []
             for item in scraped_data:
                 content = item.get('content')
                 
-                # Case A: It's a PDF
-                if content == "IS_PDF":
-                    if "pdfs" in include_types:
-                        result_dict["pdfs"].append({
-                            "title": item["title"],
-                            "url": item["url"],
-                            "type": "PDF"
-                        })
+                # Fallback to search snippet if scraping failed or returned too little content
+                if not content or len(content.strip()) < 100:
+                    snippet = item.get('snippet')
+                    if snippet:
+                        content = f"[Search Snippet Fallback]: {snippet}"
+                        
+                if not content:
                     continue
-                    
-                # Case B: Processable web content
-                if "pages" in include_types and content and len(content) > min_page_text_lenght:
-                    content = content.strip()
-                    score = quality_score(content, query)
+                
+                is_pdf = item.get('is_pdf', False) or ".pdf" in item["url"].lower()
+                
+                # Split content into paragraphs
+                paragraphs = split_into_paragraphs(content, min_length=100)
+                
+                for p_idx, p in enumerate(paragraphs):
+                    p_score = quality_score(p, query)
+                    # Boost score if query words are in the title
                     if any(word.lower() in item['title'].lower() for word in query.split()):
-                        score *= 1.2
-                    
-                    item['score'] = score
-                    item['content'] = content # Save all for now to allocate quota later
-                    temp_pages.append(item)
+                        p_score *= 1.2
+                        
+                    all_paragraphs.append({
+                        "text": p,
+                        "score": p_score,
+                        "page_url": item["url"],
+                        "page_title": item["title"],
+                        "is_pdf": is_pdf,
+                        "p_idx": p_idx
+                    })
 
-            # 4. Dynamic Text Quota Allocation
-            # Sort by score for better page priority
-            sorted_candidates = sorted(temp_pages, key=lambda x: x['score'], reverse=True)[:limit_pages]
+            # Sort all paragraphs by relevance/quality score descending
+            sorted_paras = sorted(all_paragraphs, key=lambda x: x['score'], reverse=True)
             
+            # Allocate paragraphs until the character budget quota is reached
             total_quota = limit_pages * max_page_text_lenght
-            pages_with_allocated_content = []
-            
-            for page in sorted_candidates:
-                if total_quota <= 0:
+            selected_paras = []
+            for p in sorted_paras:
+                p_len = len(p["text"])
+                if total_quota - p_len < 0:
+                    if total_quota >= 100:
+                        p["text"] = p["text"][:total_quota]
+                        selected_paras.append(p)
                     break
-                
-                content = page['content']
-                # If page fits in remaining quota, take it all
-                # If larger, take what is left of the quota
-                take_length = min(len(content), total_quota)
-                page['content'] = content[:take_length]
-                total_quota -= take_length
-                
-                if take_length >= min_page_text_lenght:
-                    pages_with_allocated_content.append(page)
+                selected_paras.append(p)
+                total_quota -= p_len
 
-            result_dict["pages"] = pages_with_allocated_content
-            # Limit PDFs
-            result_dict["pdfs"] = result_dict["pdfs"][:2]
+            # 5. Group selected paragraphs back by page
+            from collections import defaultdict
+            pages_dict = defaultdict(list)
+            pdfs_dict = defaultdict(list)
+            
+            for p in selected_paras:
+                if p["is_pdf"]:
+                    pdfs_dict[p["page_url"]].append(p)
+                else:
+                    pages_dict[p["page_url"]].append(p)
+
+            # Assemble pages
+            final_pages = []
+            for url, paras in pages_dict.items():
+                paras_sorted = sorted(paras, key=lambda x: x["p_idx"])
+                assembled_content = "\n\n...\n\n" + "\n\n...\n\n".join([p["text"] for p in paras_sorted])
+                max_score = max(p["score"] for p in paras)
+                
+                orig_item = next((item for item in scraped_data if item["url"] == url), {})
+                
+                final_pages.append({
+                    "title": paras[0]["page_title"],
+                    "url": url,
+                    "score": max_score,
+                    "content": assembled_content,
+                    "metadata": orig_item.get("metadata", {})
+                })
+            
+            result_dict["pages"] = sorted(final_pages, key=lambda x: x["score"], reverse=True)[:limit_pages]
+
+            # Assemble PDFs
+            final_pdfs = []
+            for url, paras in pdfs_dict.items():
+                paras_sorted = sorted(paras, key=lambda x: x["p_idx"])
+                assembled_content = "\n\n...\n\n" + "\n\n...\n\n".join([p["text"] for p in paras_sorted])
+                max_score = max(p["score"] for p in paras)
+                
+                orig_item = next((item for item in scraped_data if item["url"] == url), {})
+                
+                final_pdfs.append({
+                    "title": paras[0]["page_title"],
+                    "url": url,
+                    "type": "PDF",
+                    "score": max_score,
+                    "content": assembled_content,
+                    "metadata": orig_item.get("metadata", {})
+                })
+
+            # Merge final PDFs with all found PDFs metadata fallback
+            pdf_map = {pdf["url"]: pdf for pdf in all_found_pdfs}
+            for final_pdf in final_pdfs:
+                pdf_map[final_pdf["url"]] = final_pdf
+            
+            result_dict["pdfs"] = list(pdf_map.values())[:2]
 
     return result_dict
