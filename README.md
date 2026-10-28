@@ -1,16 +1,23 @@
 # DuckDuckGo Search for LLMs (ddgsearch)
 
-A specialized search engine library designed to convert web results into clean, structured input for LLMs. It handles web page scraping, formula preservation ($\LaTeX$), source code extraction, and multi-media resource organization.
+A fast, resilient search engine and web scraping library designed to convert web results into clean, structured input for LLMs and AI agents (such as [Tesius](https://github.com/Mitchell-Mirano/Tesius)).
+
+It features a decoupled architecture: an ultra-fast **DDG `/lite` radar** for immediate URL discovery, paired with a deep **content extraction and BM25Okapi ranking** pipeline for RAG contexts.
+
+---
 
 ## 🚀 Key Features
 
--   **Comprehensive Search**: Retrieve web pages, PDFs, images, and videos in a single call.
--   **Smart Content Extraction**: Powered by `trafilatura` to extract the main content while removing ads and clutter.
--   **Scientific & Technical Support**: Preserves mathematical formulas ($\LaTeX$) and code blocks with syntax highlighting.
--   **Relevance-Based Multimedia**: Images and videos are ranked using a `relevance_score` based on your query.
--   **Dynamic Token/Character Quota**: Intelligently allocates a total character budget across the most relevant results.
--   **Highly Flexible**: Choose exactly which types of content to include to optimize for speed and performance.
--   **Lightweight**: No heavy DOM dependencies; uses optimized Regex for scientific pre-processing.
+- **Resilient Engine (DuckDuckGo `/lite` Primary)**: Uses DDG's clean HTML table interface with pre-warmed cookie sessions, avoiding bot challenges (`anomaly-modal / robot challenge`). Falls back to HTML endpoint if necessary.
+- **Decoupled Architecture**: Retrieve instant links and snippets (`fetch_content=False`) in **< 800 ms**, or download and rank full content (`fetch_content=True`).
+- **BM25Okapi Ranking & Stopword Filtering**: Built-in pure-Python BM25 ranking with bilingual (Spanish/English) stopword removal and bonuses for title and tabular/code/math matches.
+- **Freshness & Regional Filters**: Native support for time ranges (`time_range="d"`, `"w"`, `"m"`, `"y"`) and regional settings (`region="es-es"`, `"wt-wt"`).
+- **Specialized Search Modes**: Presets for `mode="academic"` (arXiv, ScienceDirect, academic papers) and `mode="code"` (GitHub, official documentation).
+- **Smart Content Extraction**: Powered by `trafilatura` to extract clean Markdown while stripping ads, headers, and navigation menus.
+- **Scientific & Technical Preservation**: Preserves mathematical formulas ($\LaTeX$) and formatted code blocks.
+- **PDF Extraction**: Reads and parses PDF documents directly into Markdown with metadata via `pypdf`.
+
+---
 
 ## 📦 Installation
 
@@ -32,82 +39,109 @@ uv add git+https://github.com/Mitchell-Mirano/ddgsearch.git
 pip install git+https://github.com/Mitchell-Mirano/ddgsearch.git
 ```
 
+---
+
 ## 🛠️ Usage Examples
 
-### 🧠 1. RAG Context Preparation
-Perfect for retrieving dense, clean text to feed into an LLM.
+### ⚡ 1. Ultra-Fast Search (Links & Snippets Only, < 800ms)
+Ideal for agents that only need URLs and previews, or that manage their own downstream scraping (like Tesius's `web_plugin`).
 
 ```python
 from ddgsearch import llm_web_search
 
-# Get a large amount of text from a single high-quality source
+# Fast search without downloading full web pages
 results = await llm_web_search(
-    query="Explain the Bell Theorem and its implications",
-    include_types=["pages"],
-    limit_pages=1,
-    max_page_text_lenght=15000 
+    query="FastAPI background tasks best practices",
+    limit_urls=5,
+    fetch_content=False,
+    include_types=["pages"]
 )
 
-context = results["pages"][0]["content"]
+for page in results["pages"]:
+    print(f"[{page['title']}]({page['url']})")
+    print(f"Snippet: {page['snippet']}\n")
 ```
 
-### 🔬 2. Technical Research (PDFs & Formulas)
-Search for papers and mathematical explanations with preserved $\LaTeX$ syntax.
+### 🧠 2. Deep RAG Context with BM25 Ranking
+Downloads, extracts and ranks paragraphs using **BM25Okapi** to build high-density context for LLMs.
 
 ```python
 results = await llm_web_search(
-    query="Schrödinger equation derivatives",
+    query="Explain Bell Theorem and quantum entanglement",
+    limit_pages=2,
+    fetch_content=True,
+    include_types=["pages"]
+)
+
+for page in results["pages"]:
+    print(f"Page: {page['title']} (Score: {page['score']})")
+    print(page["content"])
+```
+
+### ⏱️ 3. Freshness Filter (Time Range)
+Search for recent information from the past day, week, month, or year.
+
+```python
+# Search for releases or news from the past month
+results = await llm_web_search(
+    query="PyTorch 2.5 new features",
+    time_range="m",   # 'd'=day, 'w'=week, 'm'=month, 'y'=year
+    fetch_content=False
+)
+```
+
+### 🔬 4. Academic & Scientific Research Mode
+Automatically targets scientific repositories (arXiv, ScienceDirect, PDF papers) with preserved $\LaTeX$ formulas.
+
+```python
+results = await llm_web_search(
+    query="Skyrmion lattice simulation Metropolis algorithm",
+    mode="academic",
     include_types=["pages", "pdfs"],
-    limit_urls=10 
+    limit_pages=2
 )
-
-# Mathematical formulas will look like $$ \frac{-\hbar^2}{2m} ... $$
-print(f"PDFs found: {len(results['pdfs'])}")
 ```
 
-### 🎬 3. Multimedia Enrichment
-Retrieve highly relevant images and videos with scoring verification.
+### 🎬 5. Multimedia Enrichment (Images & Videos)
+Retrieve relevant images and videos scored against your query.
 
 ```python
 results = await llm_web_search(
-    query="Transformer architecture diagram",
+    query="Transformer self-attention architecture diagram",
     include_types=["images", "videos"],
     limit_images=3,
     limit_videos=2
 )
-
-for img in results["images"]:
-    print(f"Image score ({img['relevance_score']}): {img['url']}")
 ```
 
-### 💻 4. Code Extraction
-Automatically wraps source code in triple backticks for easy LLM parsing.
+---
 
-```python
-results = await llm_web_search(
-    query="Quicksort implementation in Python",
-    include_types=["pages"],
-    limit_pages=1
-)
-```
-
-## 📊 Configuration
+## 📊 Configuration Parameters
 
 | Parameter | Type | Description | Default |
 | :--- | :--- | :--- | :--- |
-| `query` | `str` | Your search query. | (Required) |
-| `limit_pages` | `int` | Max number of web pages to return. | `2` |
-| `limit_images` | `int` | Max number of images. | `2` |
-| `limit_videos` | `int` | Max number of videos. | `2` |
+| `query` | `str` | Your search query. | *(Required)* |
+| `limit_urls` | `int` | Maximum URLs to retrieve in search stage. | `10` |
+| `limit_pages` | `int` | Maximum web pages with content to return. | `2` |
+| `fetch_content` | `bool` | If `False`, returns links/snippets immediately without downloading pages. | `True` |
+| `time_range` | `str` | Time filter: `"d"` (day), `"w"` (week), `"m"` (month), `"y"` (year). | `None` |
+| `region` | `str` | Regional filter (e.g. `"es-es"`, `"us-en"`, `"wt-wt"`). | `None` |
+| `mode` | `str` | Search mode: `"general"`, `"academic"`, or `"code"`. | `"general"` |
 | `include_types` | `list` | Types to include: `["pages", "pdfs", "images", "videos"]`. | `None` (All) |
-| `max_page_text_lenght` | `int` | Total character limit quota across pages. | `7500` |
+| `max_page_text_lenght` | `int` | Character limit quota across pages. | `7500` |
 | `output_format` | `str` | Output format: `"markdown"` or `"txt"`. | `"markdown"` |
+
+---
 
 ## 🧪 Tests
 
+Run the test suite with `uv`:
+
 ```bash
-uv run pytest tests/test_search.py
+uv run pytest -o pythonpath=.
 ```
+
+---
 
 ## ⚖️ License
 MIT License.
